@@ -26,24 +26,24 @@ def monogenicpar(genotype, hetpar, relvar=0.5, absvar=None):
     >>> hetpar = np.rec.fromrecords([(10, 11, 12)], 
     ...     dtype=[(i, np.int8) for i in "a", "b", "c"])
     >>> monogenicpar(genotype, hetpar)
-    rec.array([(5, 11, 18)], dtype=[('a', '|i1'), ('b', '|i1'), ('c', '|i1')])
+    rec.array([(5, 11, 18)], dtype=[('a', 'i1'), ('b', 'i1'), ('c', 'i1')])
     >>> monogenicpar(genotype, hetpar, relvar=1)
-    rec.array([(0, 11, 24)], dtype=[('a', '|i1'), ('b', '|i1'), ('c', '|i1')])
+    rec.array([(0, 11, 24)], dtype=[('a', 'i1'), ('b', 'i1'), ('c', 'i1')])
     >>> monogenicpar(genotype, hetpar, absvar=hetpar)
-    rec.array([(0, 11, 24)], dtype=[('a', '|i1'), ('b', '|i1'), ('c', '|i1')])
+    rec.array([(0, 11, 24)], dtype=[('a', 'i1'), ('b', 'i1'), ('c', 'i1')])
     
     >>> genotype = [[0, 1, 2], [2, 1, 0]]
     >>> monogenicpar(genotype, hetpar)
-    rec.array([(5, 11, 18), (15, 11, 6)], dtype=[('a', '|i1'), ...])
+    rec.array([(5, 11, 18), (15, 11, 6)], dtype=[('a', 'i1'), ...])
     
     A recarray genotype is `unstructure`\ d before use, and its field names are 
     ignored.
     
     >>> genotype =  np.rec.array([(0, 1, 2), (2, 1, 0)], 
-    ...     dtype=[('a', '|i1'), ('b', '|i1'), ('c', '|i1')])
+    ...     dtype=[('a', 'i1'), ('b', 'i1'), ('c', 'i1')])
     >>> monogenicpar(genotype, hetpar)
     rec.array([(5, 11, 18), (15, 11, 6)], 
-          dtype=[('a', '|i1'), ('b', '|i1'), ('c', '|i1')])
+          dtype=[('a', 'i1'), ('b', 'i1'), ('c', 'i1')])
     """
     genotype = np.atleast_2d(unstruct(genotype))
     hetpar = np.asanyarray(hetpar)
@@ -241,6 +241,72 @@ def prepare_geno2par_additive(genes, parnames, origpar, relchange, nloci=None):
     relvar = relvar * np.concatenate(tup)
 
     return genes, hetpar, relvar
+
+def geno2par_haploid(genotype, hetpar, loc2par):
+    """
+    General (many:many) haploid genotype-to-parameter map for N biallelic (alleles 0/1) 
+    loci affecting M parameters. For each locus the allele (0 or 1) in the genotype is
+    mapped to one of two parameters in a tuple. 
+    
+    :return recarray: tuples with shape (1,) containing parameter values for 
+        the given genotype.
+    
+    :param sequence genotype: a single, multilocus genotype represented by a 
+        sequence where each item is 0, 1 denoting one allele per locus.
+        
+    :param recarray hetpar: record array of  M (2,) tuples of parameter values 
+        in each tuple the first parameter value corresponds to allele 0 and the 
+        second to allele 1
+    
+    :param float loc2par: N*M design matrix relating heritable parameters to loci.
+        If element loc2par[i,j] is 1 then the value of parameter j determined by then
+        genotype at locus i.
+    
+    Gene/parameter names are taken from the fieldnames of hetpar.
+    Thus, the result has the same dtype (Numpy data type) as the genotype array.
+    
+    Creating a record array of baseline parameter values 
+    (corresponding to the fully heterozygous genotype).
+    
+    >>> baseline = [("a", (0.25,0.5)), ("b", (0.5,1.5)), ("c", (0.75,1.25))]
+    >>> dtype = [(k, float, (2,)) for k, v in baseline]
+    >>> hetpar = np.array([v for k, v in baseline]).flatten().view(dtype, np.recarray)
+    
+    Introducing two loci A and B such that A affects parameters a and b, while B affects
+    parameters c
+    
+    >>> loci = ["Locus A","Locus B"]
+    >>> loc2par = np.array([[1, 1, 0], [0, 0, 1]])
+
+    Parameter values for genotype aaBB
+    
+    >>> genotype = [1,0]
+    >>> geno2par_haploid(genotype, hetpar, loc2par)      #doctest: +NORMALIZE_WHITESPACE
+    rec.array([([0.5, 0.0], [1.5, 0.0], [0.75, 0.0])],
+          dtype=[('a', '<f8', (2,)), ('b', '<f8', (2,)), ('c', '<f8', (2,))])
+    """
+    N = loc2par.shape[0] #number of genes
+    M = loc2par.shape[1] #number of heritable parameters
+
+    ##convert genotype to (1,N) np.array with elements in 0,1,2
+    genotype = np.array(genotype)
+    allelecount = genotype
+    allelecount.shape = (N,) 
+
+    genopar = copy(hetpar)    #copy parameter structure
+    #modify parameter values for each single locus genotype
+    for i in range(N):
+        for j in range(M):
+            if loc2par[i, j] == 1:
+                if allelecount[i] == 0:
+                    genopar[0][j][0] = hetpar[0][j][0]
+                if allelecount[i] == 1:
+                    genopar[0][j][0] = hetpar[0][j][1]
+                
+                #haploid hack for diploid equations
+                genopar[0][j][1] = 0
+                  
+    return genopar
 
 def geno2par_diploid(genotype, hetpar, loc2par):
     """
