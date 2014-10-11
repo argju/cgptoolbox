@@ -1,0 +1,23 @@
+#!/bin/sh
+#SBATCH --account=nn4653k
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=2G
+#SBATCH --job-name=cGParray
+#SBATCH --tmp=2G
+source /site/bin/jobsetup
+cleanup "cd $SUBMITDIR; mv *$SLURM_JOBID* $logdir"
+
+## Copy files to work directory:
+cd $SUBMITDIR
+
+### batchjob ###
+echo "TASK_ID: "$TASK_ID" starting array_cGP_"$Model".py"
+before="$(date +%s)"
+python -u array_cGPsim.py
+after="$(date +%s)"
+
+#timing
+echo "Timing"
+elapsed_python="$(expr $after - $before)"
+echo "Python computation time (seconds): "$elapsed_python
+

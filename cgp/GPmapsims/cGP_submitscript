@@ -1,0 +1,104 @@
+#!/bin/bash
+##########################################################
+## cGP_submitscript
+#
+# bash script to be run on stallo or titan  which:
+# 1. Creates a datestamp simulation ID and creates a directory
+#    to hold all output data and queue logs
+# 2. Submits an array of similar jobs (arrayscript_HOST , HOST=stallo/titan)
+# 3. Submits a cleanupjob (cleanupscript_stallo / _titan ) to
+#    be run after the array in 2. is finished
+# 4. Runs svn status, svn info and svn diff and puts output in $SimID/svn
+# 5
+###########################################################
+## job parameters
+
+#parameters used by cGP_submitscript
+export Narray=20     #number of array jobs
+
+## parameters passed on to python job started by arrayscript_HOST
+export Model="adjmotifshaploid"
+export Nloci=3; #number of polymorphic loci
+export Nsims=2; #number of replications
+export SimID=`date +%Y-%m-%d-%H-%M-%S`;
+export SimID=$SimID"_"$Model"_"$Nloci"loci_"$Nsims"reps"
+export lockfile=$(pwd)"/"$SimID"/lock"
+export jobfile=$(pwd)"/"$SimID"/job"
+export datafile=$(pwd)"/"$SimID"/data"
+export errorfile=$(pwd)"/"$SimID"/error"
+
+## parameters for queue system
+export logdir=$(pwd)"/"$SimID"/qlogs"
+
+############################################################
+## summarise key parameters and give user the chance to kill job
+############################################################
+echo "** Key inputs"
+echo "Model:  "$Model
+echo "Nloci:  "$Nloci
+echo "Nsims:  "$Nsims
+echo "Narray: "$Narray
+echo "Job directory: "$SimID"/"
+echo "Sleeping 3s before submitting jobs, Ctrl-C to stop"
+sleep 3s
+echo ""
+
+#######################################
+## 1. initialise job directory and files #
+#######################################
+mkdir $(pwd)"/"$SimID
+mkdir $logdir
+
+#########################################################
+## 2. and 3. submit to sbatch (titan) or qsub (stallo) ##
+#########################################################
+
+#find out if we are on stallo (HOST=stallo) or titan (HOST=login)
+export HOST=$(hostname | gawk -F "-" '{print $1}')
+echo "** Submitting jobs to queue system"
+if [ $HOST == "login" ] # abel
+then
+  for TASK_ID in $(seq 1 $Narray);
+  do
+    echo -ne "* Submitting arrayjob "$TASK_ID" ... "
+    export TASK_ID
+    export slog=$(sbatch arrayscript_abel 2>&1)
+    sleep 1
+    echo $slog
+    array[TASK_ID]=$(echo $slog | gawk -F " " '{ print $4}')
+  done
+  export array
+  echo "Elements in array:  ${array[@]}"
+  deps="afterok"; for a in ${array[@]}; do deps=$deps":"$a; done; export deps
+  echo $deps
+  echo -ne "* Finished submitting arrrayjobs\n* Submitting cleanupjob ... "
+  #sbatch --dependency=$deps cleanupscript_titan
+
+else #local machine
+    #python job
+    export TASK_ID=1
+    export SUBMITDIR=$(pwd)
+    echo "Submitting background job"
+    cd $SimID && python -u ../array_cGPsim.py # &> $logdir/python.log &
+    cd ..
+fi
+
+###################
+## 4. git details #
+###################
+echo "Git info:   " >> $SimID/svn
+echo "== Remote URL: `git remote -v`" >> $SimID/git
+echo "== Remote Branches: " >> $SimID/git
+git branch -r >> $SimID/git
+echo >> $SimID/git
+echo "== Local Branches:" >> $SimID/git
+git branch >> $SimID/git
+echo >> $SimID/git
+echo "== Configuration (.git/config)" >> $SimID/git
+cat .git/config >> $SimID/git
+echo >> $SimID/git
+echo "== Most Recent Commit" >> $SimID/git
+git log --max-count=1 >> $SimID/git
+echo >> $SimID/git
+git status >> $SimID/git
+git diff >> $SimID/git
