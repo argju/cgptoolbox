@@ -127,7 +127,7 @@ def get_ffl_phenotypes(par):
     Y2 = np.nan*np.empty(len(adjmatrix))
     Y3 = np.nan*np.empty(len(adjmatrix))
     for i in range(len(Y3)):
-        print motifnames[i]
+        print motifnames[i],
         model.adjmatrix = np.array(adjmatrix[i]).reshape(3,3)
         model.boolfunc = model.adjacency_to_boolfunc(model.adjmatrix)
         P = par2ph(par)
